@@ -52,8 +52,7 @@ class DatabaseIntrospection( BaseDatabaseIntrospection ):
             Database.DECIMAL :          "DecimalField",
             Database.DATE :             "DateField",
             Database.TIME :             "TimeField",
-            Database.DATETIME :         "DateTimeField",
-            Database.BOOLEAN:           "BooleanField",
+            Database.DATETIME :         "DateTimeField"
         }    
         if(djangoVersion[0:2] > (1, 1)):
             data_types_reverse[Database.BINARY] = "BinaryField"
