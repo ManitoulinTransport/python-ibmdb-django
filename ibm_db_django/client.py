@@ -1,7 +1,7 @@
 # +--------------------------------------------------------------------------+
 # |  Licensed Materials - Property of IBM                                    |
 # |                                                                          |
-# | (C) Copyright IBM Corporation 2009-2021.                                      |
+# | (C) Copyright IBM Corporation 2009-2020.                                      |
 # +--------------------------------------------------------------------------+
 # | This module complies with Django 1.0 and is                              |
 # | Licensed under the Apache License, Version 2.0 (the "License");          |
@@ -29,12 +29,11 @@ from django import VERSION as djangoVersion
 import types
 
 import os
-import sys
 
 class DatabaseClient( BaseDatabaseClient ):
     
     #Over-riding base method to provide shell support for DB2 through Django.
-    def runshell( self, parameters ):
+    def runshell( self ):
         if ( djangoVersion[0:2] <= ( 1, 0 ) ):
             from django.conf import settings
             database_name = settings.DATABASE_NAME
@@ -58,15 +57,15 @@ class DatabaseClient( BaseDatabaseClient ):
         else:
             cmdArgs += ["connect to %s" % database_name]
         if sys.version_info.major >= 3:
-            strvar = str
+            str = str
         else:
-            strvar = str
+            str = str
 
-        if ( isinstance( database_user, strvar ) and
+        if ( isinstance( database_user, str ) and
             ( database_user != '' ) ):
             cmdArgs += ["user %s" % database_user]
             
-            if ( isinstance( database_password, strvar ) and
+            if ( isinstance( database_password, str ) and
                 ( database_password != '' ) ):
                 cmdArgs += ["using %s" % database_password]
                 
