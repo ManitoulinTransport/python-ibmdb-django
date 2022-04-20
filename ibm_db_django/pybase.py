@@ -21,6 +21,8 @@ from _ast import Or
 from . import Database
 
 from decimal import Decimal
+from typing import Optional
+
 import regex
 
 import datetime
