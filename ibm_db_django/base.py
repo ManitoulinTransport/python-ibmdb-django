@@ -49,12 +49,9 @@ from ibm_db_django.client import DatabaseClient
 from ibm_db_django.creation import DatabaseCreation
 from ibm_db_django.introspection import DatabaseIntrospection
 from ibm_db_django.operations import DatabaseOperations
-if not _IS_JYTHON:
-    import ibm_db_django.pybase as Base
-    import ibm_db_dbi as Database
-else:
-    import ibm_db_django.jybase as Base
-    from com.ziclix.python.sql import zxJDBC as Database
+
+from . import Database
+import ibm_db_django.pybase as Base
     
 # For checking django's version
 from django import VERSION as djangoVersion
@@ -75,11 +72,7 @@ if ( djangoVersion[0:2] >= ( 1, 6 )):
     ProgrammingError = Database.ProgrammingError
     NotSupportedError = Database.NotSupportedError
     
-
-if _IS_JYTHON:
-    dbms_name = 'dbname'
-else:
-    dbms_name = 'dbms_name'
+dbms_name = 'dbms_name'
     
 class DatabaseFeatures( BaseDatabaseFeatures ):    
     can_use_chunked_reads = True

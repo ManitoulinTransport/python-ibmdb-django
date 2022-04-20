@@ -40,10 +40,8 @@ from django.db.models.fields.related import ManyToManyRel
 from django.db.utils import ProgrammingError
 from django import VERSION as djangoVersion
 
-if not _IS_JYTHON:
-    import ibm_db_dbi as Database
-else:
-    from com.ziclix.python.sql import zxJDBC as Database
+from . import Database
+
 Error = Database.Error
 
 def _is_relevant_relation(relation, altered_field):

@@ -18,12 +18,7 @@
 #from builtins import True
 from _ast import Or
 
-# Importing IBM_DB wrapper ibm_db_dbi
-try:
-    import ibm_db_dbi as Database
-    import ibm_db
-except ImportError as e:
-    raise ImportError( "ibm_db module not found. Install ibm_db module from http://code.google.com/p/ibm-db/. Error: %s" % e )
+from . import Database
 
 from decimal import Decimal
 import regex
@@ -102,19 +97,12 @@ class DatabaseWrapper( object ):
             kwargs['dsn'] += "SSLSERVERCERTIFICATE=%s;" % (  kwargs.get( 'sslservercertificate' ))
             del kwargs['sslservercertificate']
 
-        # Before Django 1.6, autocommit was turned OFF
-        if ( djangoVersion[0:2] >= ( 1, 6 )):
-            conn_options = {Database.SQL_ATTR_AUTOCOMMIT : Database.SQL_AUTOCOMMIT_ON}
-        else:
-            conn_options = {Database.SQL_ATTR_AUTOCOMMIT : Database.SQL_AUTOCOMMIT_OFF}
+        conn_options = {'autocommit': False}
         kwargs['conn_options'] = conn_options
-        if kwargsKeys.__contains__( 'options' ):
-            kwargs.update( kwargs.get( 'options' ) )
-            if (ibm_db.SQL_ATTR_CURSOR_TYPE in kwargs.get('conn_options') and
-                kwargs.get('conn_options')[ibm_db.SQL_ATTR_CURSOR_TYPE] == ibm_db.SQL_CURSOR_KEYSET_DRIVEN):
-                scrollable_cursor = True
-
+        if 'options' in kwargs:
+            kwargs.update(kwargs.get('options'))
             del kwargs['options']
+
         if kwargsKeys.__contains__( 'port' ):
             del kwargs['port']
         
@@ -132,23 +120,10 @@ class DatabaseWrapper( object ):
         if SchemaFlag:
             schema = connection.set_current_schema(currentschema)
 
-        if scrollable_cursor:
-            # The documentation of ibm_db.connect indicates that you could pass
-            # a dictionary of options
-            # https://github.com/ibmdb/python-ibmdb/wiki/APIs#ibm_dbconnect .
-            # However, the dictionary of options gets ignored. Therefore,
-            # the options need to be set AFTER the connection is established.
-            #
-            # You can see the code preceeding setting
-            # AUTOCOMMIT and CURRENTSCHEMA options in much the same way and
-            # probably working around the same bug.
-            connection.set_option(
-                {ibm_db.SQL_ATTR_CURSOR_TYPE: ibm_db.SQL_CURSOR_KEYSET_DRIVEN})
-
         return connection
     
     def is_active( self, connection = None ):
-        return Database.ibm_db.active(connection.conn_handler)
+        return bool(connection.cursor())
         
     # Over-riding _cursor method to return DB2 cursor.
     def _cursor( self, connection ):

@@ -17,12 +17,11 @@
 
 import sys
 
-_IS_JYTHON = sys.platform.startswith('java')
 from setuptools import setup, find_packages
 from distutils.core import setup, Extension
 
-PACKAGE = 'ibm_db_django'
-VERSION = __import__('ibm_db_django').__version__
+PACKAGE = 'iseries'
+VERSION = __import__('iseries').__version__
 LICENSE = 'Apache License 2.0'
 extra = {}
 if sys.version_info >= (3, ):
@@ -33,20 +32,19 @@ setup (
     version           = VERSION,
     license           = LICENSE,
     platforms         = 'All',
-    install_requires  = _IS_JYTHON and ['Django>=2.2,<2.3'] or ['ibm_db>=3.0.1',
-                          'Django>=2.2,<2.3'],
-    dependency_links  = _IS_JYTHON and ['http://pypi.python.org/pypi/Django/'] or ['http://pypi.python.org/pypi/ibm_db/',
-                          'http://pypi.python.org/pypi/Django/'],
+    install_requires  = ['pyodbc>=4.0.27', 'django>=2.2.0'],
+    dependency_links  = ['https://pypi.org/project/pyodbc/', 'http://pypi.python.org/pypi/Django/',
+                      'https://www.ibm.com/support/pages/ibm-i-access-client-solutions'],
     description       = 'DB2 support for Django framework.',
     long_description  = 'DB2 support for Django framework.',
     author            = 'Ambrish Bhargava, Tarun Pasrija, Rahul Priyadarshi',
     author_email      = 'opendev@us.ibm.com',
     maintainer        = 'IBM Application Development Team',
     maintainer_email  = 'opendev@us.ibm.com, ibm_db@googlegroups.com',
-    url               = 'http://pypi.python.org/pypi/ibm_db_django/',
-    keywords          = 'django ibm_db_django backends adapter IBM Data Servers database db2',
-    packages          = ['ibm_db_django'],
-    classifiers       = [ _IS_JYTHON and 'Development Status :: 4 - Beta' or 'Development Status :: 5 - Production/Stable',
+    url               = 'http://pypi.python.org/pypi/iseries/',
+    keywords          = 'django iseries backends adapter IBM Data Servers database db2',
+    packages          = ['iseries'],
+    classifiers       = [
                          'Intended Audience :: Developers',
                          'License :: OSI Approved :: Apache Software License',
                          'Operating System :: Microsoft :: Windows :: Windows NT/2000',
@@ -60,7 +58,7 @@ setup (
     zip_safe          = False,
     include_package_data = True,
     entry_points = {
-		'django.db.backends': ['ibm_db_django = ibm_db_django']
+		'django.db.backends': ['iseries = iseries']
     },
     **extra
 )
