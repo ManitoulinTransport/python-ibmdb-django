@@ -21,7 +21,7 @@ from setuptools import setup, find_packages
 from distutils.core import setup, Extension
 
 PACKAGE = 'iseries'
-VERSION = __import__('iseries').__version__
+VERSION = __import__('ibm_db_django').__version__
 LICENSE = 'Apache License 2.0'
 extra = {}
 if sys.version_info >= (3, ):
