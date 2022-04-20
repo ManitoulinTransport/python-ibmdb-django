@@ -36,21 +36,21 @@ class DatabaseIntrospection( BaseDatabaseIntrospection ):
 
     if not _IS_JYTHON:
         data_types_reverse = {
-            Database.STRING :           "CharField",
-            Database.TEXT :             "TextField",
-            Database.XML :              "XMLField",
-            Database.NUMBER :           "IntegerField",
-            Database.FLOAT :            "FloatField",
-            Database.DECIMAL :          "DecimalField",
-            Database.DATE :             "DateField",
-            Database.TIME :             "TimeField",
-            Database.DATETIME :         "DateTimeField"
-        }    
-        if(djangoVersion[0:2] > (1, 1)):
-            data_types_reverse[Database.BINARY] = "BinaryField"
-            data_types_reverse[Database.BIGINT] = "BigIntegerField"
-        else:
-            data_types_reverse[Database.BIGINT] = "IntegerField"
+            'VARCHAR': 'CharField',
+            'CHAR': 'CharField',
+            'DATE': 'DateField',
+            'TIMESTAMP': 'DateTimeField',
+            'TIMESTMP': 'DateTimeField',
+            'DECIMAL': 'DecimalField',
+            'DOUBLE': 'FloatField',
+            'INTEGER': 'IntegerField',
+            'BIGINT': 'BigIntegerField',
+            'SMALLINT': 'SmallIntegerField',
+            'CLOB': 'TextField',
+            'TIME': 'TimeField',
+            'XML': 'XMLField',
+            'BLOB': 'BinaryField',
+        }
     else:
         data_types_reverse = {
             zxJDBC.CHAR:                "CharField",
