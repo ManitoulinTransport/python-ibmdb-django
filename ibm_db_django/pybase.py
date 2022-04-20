@@ -138,7 +138,7 @@ class DatabaseWrapper( object ):
             self.cursor()
         return tuple( int( version ) for version in self.connection.server_info()[1].split( "." ) )
     
-class DB2CursorWrapper( Database.Cursor ):
+class DB2CursorWrapper(connection.cursor()):
         
     """
     This is the wrapper around IBM_DB_DBI in order to support format parameter style
