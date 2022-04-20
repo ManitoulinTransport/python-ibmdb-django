@@ -20,7 +20,7 @@ import sys
 from setuptools import setup, find_packages
 from distutils.core import setup, Extension
 
-PACKAGE = 'iseries'
+PACKAGE = 'ibm_db_django'
 VERSION = __import__('ibm_db_django').__version__
 LICENSE = 'Apache License 2.0'
 extra = {}
@@ -41,9 +41,9 @@ setup (
     author_email      = 'opendev@us.ibm.com',
     maintainer        = 'IBM Application Development Team',
     maintainer_email  = 'opendev@us.ibm.com, ibm_db@googlegroups.com',
-    url               = 'http://pypi.python.org/pypi/iseries/',
-    keywords          = 'django iseries backends adapter IBM Data Servers database db2',
-    packages          = ['iseries'],
+    url               = 'http://pypi.python.org/pypi/ibm_db_django/',
+    keywords          = 'django ibm_db_django backends adapter IBM Data Servers database db2',
+    packages          = ['ibm_db_django'],
     classifiers       = [
                          'Intended Audience :: Developers',
                          'License :: OSI Approved :: Apache Software License',
@@ -58,7 +58,7 @@ setup (
     zip_safe          = False,
     include_package_data = True,
     entry_points = {
-		'django.db.backends': ['iseries = iseries']
+		'django.db.backends': ['ibm_db_django = ibm_db_django']
     },
     **extra
 )
