@@ -138,270 +138,113 @@ class DatabaseWrapper( object ):
             self.cursor()
         return tuple( int( version ) for version in self.connection.server_info()[1].split( "." ) )
     
-class DB2CursorWrapper(connection.cursor()):
+class DB2CursorWrapper():
         
     """
     This is the wrapper around IBM_DB_DBI in order to support format parameter style
     IBM_DB_DBI supports qmark, where as Django support format style, 
     hence this conversion is required. 
+
+    pyodbc.Cursor cannot be subclassed, so we store it as an attribute
     """
-    
-    def __init__( self, connection ): 
-        super( DB2CursorWrapper, self ).__init__( connection.conn_handler, connection )
-        
-    def __iter__( self ):
-        return self
-        
-    def __next__( self ):
-        row = self.fetchone()
-        if row == None:
-            raise StopIteration
-        return row
-    
-    def _create_instance(self, connection):
-        return DB2CursorWrapper(connection)
-        
-    #Ex: string = 'ababababababababab', sub = 'ab', wanted = 'CD', n = 5
-    #outputs: ababababCDabababab
-    def _replacenth( self, string, sub, wanted, index, need_quote):
-        where = [m.start() for m in re.finditer(sub, string)][index]
-        before = string[:where]
-        after = string[where+2:]
-        newString = before + need_quote + str(wanted) + need_quote + after
-        return newString
 
-    def _format_parameters( self, parameters, operation, return_only_param = False):
-        select_update = False
-        if re.match(r'^(SELECT|UPDATE) ', operation):
-            select_update = True
+    def __init__(self, connection):
+        self.cursor: Database.Cursor = connection.cursor()
 
-        new_parameters = []
-        parameters = list( parameters )
-        for index in range( len( parameters ) ):
-            # With raw SQL queries, datetimes can reach this function
-            # without being converted by DateTimeField.get_db_prep_value.
-            if settings.USE_TZ and isinstance( parameters[index], datetime.datetime ):
-                param = parameters[index]
-                if timezone.is_naive( param ):
-                    warnings.warn("Received a naive datetime (%s)"
-                              " while time zone support is active." % param,
-                              RuntimeWarning)
-                    default_timezone = timezone.get_default_timezone()
-                    param = timezone.make_aware( param, default_timezone )
-                param = param.astimezone(timezone.utc).replace(tzinfo=None)
-                parameters[index] = param
+    def __iter__(self):
+        return self.cursor
 
-            need_quote = ''
-            if (select_update and isinstance(parameters[index], Decimal)):
-                operation = self._replacenth(operation, '%s', parameters[index], len(new_parameters), need_quote)
-            else:
-                new_parameters.append(parameters[index])
+    def __getattr__(self, attr):
+        return getattr(self.cursor, attr)
 
-        if return_only_param:
-            return tuple( new_parameters )
+    def get_current_schema(self):
+        self.execute('select CURRENT_SCHEMA from sysibm.sysdummy1')
+        return self.fetchone()[0]
 
-        return tuple( new_parameters ), operation
+    def set_current_schema(self, schema):
+        self.execute(f'SET CURRENT_SCHEMA = {schema}')
 
-    def _resolve_parameters_in_aggregator_func(self, parameters, operation):
-        op_temp = ""
-        op_temp_wParam = ""
-        p_start = 0
-        aggr_list = ['COUNT','AVG','MIN','MAX','SUM']
-        res = any(ele in operation for ele in aggr_list)
+    def close(self):
+        """
+        Django calls close() twice on some cursors, but pyodbc does not allow this.
+        pyodbc deletes the 'connection' attribute when closing a cursor, so we check for that.
 
-        if res:
-            for m in regex.finditer(r'(SUM|AVG|COUNT|MIN|MAX)\ *\(', operation):
-                end = m.end()
-                p_start = len(op_temp)
-                prev_str = operation[p_start:end-1]
-                op_temp = op_temp + prev_str
-                op_temp_wParam = op_temp_wParam + prev_str
-                next_str = operation[end-1:]
-                parm_count = op_temp_wParam.count('%s')
-                for item in regex.finditer(r'\((?>[^()]|(?R))*\)', next_str):
-                    start = item.start()
-                    end = item.end()
-                    str_wp = next_str[start:end]
-                    while (str_wp.count('%s') > 0):
-                        if(isinstance(parameters[parm_count], str) and
-                           (parameters[parm_count].find('DATE') != 0) and
-                           (parameters[parm_count].find('TIMESTAMP') != 0)):
-                            need_quote = "\'"
-                        else:
-                            need_quote = ''
-                        str_wp = self._replacenth(str_wp, '%s', parameters[parm_count], 0, need_quote)
-                        parameters = parameters[:parm_count] + parameters[(parm_count+1):]
-                    op_temp_wParam = op_temp_wParam + str_wp
-                    op_temp = op_temp + next_str[start:end]
-                    remg = end
-                    break
+        In the unlikely event that this code prevents close() from being called, pyodbc will close
+        the cursor automatically when it goes out of scope.
+        """
+        if getattr(self, 'connection', False):
+            self.cursor.close()
 
-            p_start = len(op_temp)
-            operation = op_temp_wParam + operation[p_start:]
+    def execute(self, query, params=()):
+        if params:
+            query = self.convert_query(query)
+        result = self._wrap_execute(partial(self.cursor.execute, query, params))
+        return result
 
-        return parameters, operation
+    def executemany(self, query, param_list):
+        if not param_list:
+            # empty param_list means do nothing (execute the query zero times)
+            return
+        query = self.convert_query(query)
+        result = self._wrap_execute(partial(self.cursor.executemany, query, param_list))
+        return result
 
-    def _resolve_parameters_in_expression_func(self, parameters, operation):
-        prev_end = 0
-        op_temp_wParam = ""
-        p_start = 0
-
-        if re.search(r'%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
-            for m in re.finditer(r'%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
-                p_start = m.start()
-                op_temp_wParam = op_temp_wParam + operation[prev_end:p_start]
-                parm_count = op_temp_wParam.count('%s')
-                end = m.end()
-                str_wp = operation[p_start:end]
-                if((isinstance(parameters[parm_count], str) and
-                   (parameters[parm_count].find('DATE') != 0) and
-                   (parameters[parm_count].find('TIMESTAMP') != 0)) or
-                    (isinstance(parameters[parm_count], datetime.date))):
-                    need_quote = "\'"
-                else:
-                    need_quote = ''
-                if(isinstance(parameters[parm_count], memoryview)):
-                    replace_string = "BX\'%s\'" % parameters[parm_count].obj.hex()
-                else:
-                    replace_string = parameters[parm_count]
-                str_wp = self._replacenth(str_wp, '%s', replace_string, 0, need_quote)
-                parameters = parameters[:parm_count] + parameters[(parm_count+1):]
-                op_temp_wParam = op_temp_wParam + str_wp
-                prev_end = end
-
-            operation = op_temp_wParam + operation[end:]
-
-        return parameters, operation
-
-    # Over-riding this method to modify SQLs which contains format parameter to qmark. 
-    def execute( self, operation, parameters = () ):
-        if( djangoVersion[0:2] >= (2 , 0)):
-            operation = str(operation)
+    def _wrap_execute(self, execute):
         try:
-            if operation == "''":
-                operation = "SELECT NULL FROM SYSIBM.DUAL FETCH FIRST 0 ROW ONLY"
-            if operation.find('ALTER TABLE') == 0 and getattr(self.connection, dbms_name) != 'DB2':
-                doReorg = 1
-            else:
-                doReorg = 0
-            if operation.count("db2regexExtraField(%s)") > 0:
-                operation = operation.replace("db2regexExtraField(%s)", "")
-                operation = operation % parameters
-                parameters = ()
+            result = execute()
+        except Database.Error as e:
+            # iaccess seems to be sending incorrect sqlstate for some errors
+            # reraise "referential constraint violation" errors as IntegrityError
+            if e.args[0] == 'HY000' and SQLCODE_0530_REGEX.match(e.args[1]):
+                raise utils.IntegrityError(*e.args, execute.func, *execute.args)
+            elif e.args[0] == 'HY000' and SQLCODE_0910_REGEX.match(e.args[1]):
+                # file in use error (likely in the same transaction)
+                query, _params, *_ = execute.args
+                if query.startswith('ALTER TABLE') and 'RESTART WITH' in query:
+                    raise utils.ProgrammingError(
+                        *e.args,
+                        execute.func,
+                        execute.args,
+                        "Db2 for iSeries cannot reset a table's primary key sequence during same "
+                        "transaction as insert/update on that table"
+                    )
+            raise type(e)(*e.args, execute.func, execute.args)
+        if result == self.cursor:
+            return self
+        return result
 
-            if operation.count( "%s" ) > 0 and parameters:
-                parameters, operation = self._resolve_parameters_in_aggregator_func(parameters, operation)
-                parameters, operation = self._format_parameters( parameters, operation )
-                parameters, operation = self._resolve_parameters_in_expression_func( parameters, operation )
-                if operation.count( "%s" ) > 0:
-                    operation = operation.replace("%s", "?")
-                
-            if ( djangoVersion[0:2] <= ( 1, 1 ) ):
-                if ( doReorg == 1 ):
-                    super( DB2CursorWrapper, self ).execute( operation, parameters )
-                    return self._reorg_tables()
-                else:    
-                    return super( DB2CursorWrapper, self ).execute( operation, parameters )
-            else:
-                try:
-                    if ( doReorg == 1 ):
-                        super( DB2CursorWrapper, self ).execute( operation, parameters )
-                        return self._reorg_tables()
-                    else:    
-                        return super( DB2CursorWrapper, self ).execute( operation, parameters )
-                except IntegrityError as e:
-                    six.reraise(utils.IntegrityError, utils.IntegrityError( *tuple( six.PY3 and e.args or ( e._message, ) ) ), sys.exc_info()[2])
-                    raise
-                        
-                except ProgrammingError as e:
-                    six.reraise(utils.ProgrammingError, utils.ProgrammingError( *tuple( six.PY3 and e.args or ( e._message, ) ) ), sys.exc_info()[2])
-                    raise
+    def convert_query(self, query):
+        """
+        Django uses "format" style placeholders, but the iaccess odbc driver uses "qmark" style.
+        This fixes it -- but note that if you want to use a literal "%s" in a query,
+        you'll need to use "%%s".
+        """
+        return FORMAT_QMARK_REGEX.sub('?', query).replace('%%', '%')
 
-                except DatabaseError as e:
-                    six.reraise(utils.DatabaseError, utils.DatabaseError( *tuple( six.PY3 and e.args or ( e._message, ) ) ), sys.exc_info()[2])
-                    raise
-
-        except ( TypeError ):
-            return None
-        
-    # Over-riding this method to modify SQLs which contains format parameter to qmark.
-    def executemany( self, operation, seq_parameters ):
-        try:
-            if operation.count("db2regexExtraField(%s)") > 0:
-                 raise ValueError("Regex not supported in this operation")
-
-            return_only_param = True
-            seq_parameters = [ self._format_parameters( parameters, operation, return_only_param) for parameters in seq_parameters ]
-            if operation.count( "%s" ) > 0:
-                operation = operation % ( tuple( "?" * operation.count( "%s" ) ) )
-                
-            if ( djangoVersion[0:2] <= ( 1, 1 ) ):
-                return super( DB2CursorWrapper, self ).executemany( operation, seq_parameters )
-            else:
-                try:
-                    return super( DB2CursorWrapper, self ).executemany( operation, seq_parameters )
-                except IntegrityError as e:
-                    six.reraise(utils.IntegrityError, utils.IntegrityError( *tuple( six.PY3 and e.args or ( e._message, ) ) ), sys.exc_info()[2])
-                    raise
-
-                except DatabaseError as e:
-                    six.reraise(utils.DatabaseError, utils.DatabaseError( *tuple( six.PY3 and e.args or ( e._message, ) ) ), sys.exc_info()[2])
-                    raise
-
-        except ( IndexError, TypeError ):
-            return None
-    
-    # table reorganization method
-    def _reorg_tables( self ):
-        checkReorgSQL = "select TABSCHEMA, TABNAME from SYSIBMADM.ADMINTABINFO where REORG_PENDING = 'Y'"
-        res = []
-        reorgSQLs = []
-        parameters = ()
-        super( DB2CursorWrapper, self ).execute(checkReorgSQL, parameters)
-        res = super( DB2CursorWrapper, self ).fetchall()
-        if res:
-            for sName, tName in res:
-                reorgSQL = '''CALL SYSPROC.ADMIN_CMD('REORG TABLE "%(sName)s"."%(tName)s"')''' % {'sName': sName, 'tName': tName}
-                reorgSQLs.append(reorgSQL)
-            for sql in reorgSQLs:
-                super( DB2CursorWrapper, self ).execute(sql)
-    
-    # Over-riding this method to modify result set containing datetime and time zone support is active
-    def fetchone( self ):
-        row = super( DB2CursorWrapper, self ).fetchone()
+    def _row_factory(self, row: Optional[Database.Row]):
         if row is None:
             return row
-        else:
-            return self._fix_return_data( row )
-    
-    # Over-riding this method to modify result set containing datetime and time zone support is active
-    def fetchmany( self, size=0 ):
-        rows = super( DB2CursorWrapper, self ).fetchmany( size )
-        if rows is None:
-            return rows
-        else:
-            return [self._fix_return_data( row ) for row in rows]
-    
-    # Over-riding this method to modify result set containing datetime and time zone support is active
-    def fetchall( self ):
-        rows = super( DB2CursorWrapper, self ).fetchall()
-        if rows is None:
-            return rows
-        else:
-            return [self._fix_return_data( row ) for row in rows]
-        
-    # This method to modify result set containing datetime and time zone support is active   
-    def _fix_return_data( self, row ):
-        row = list( row )
-        index = -1
-        if ( djangoVersion[0:2] >= ( 1, 4 ) ):
-            for value, desc in zip( row, self.description ):
-                index = index + 1
-                if ( desc[1] == Database.DATETIME ):
-                    if settings.USE_TZ and value is not None and timezone.is_naive( value ):
-                        value = value.replace( tzinfo=timezone.utc )
-                        row[index] = value
-                elif ( djangoVersion[0:2] >= (1, 5 ) ):
-                    if isinstance(value, six.string_types):
-                        row[index] = re.sub(r'[\x00]', '', value)
-        return tuple( row )
+        return tuple(row)
+
+    def fetchone(self):
+        return self._row_factory(self.cursor.fetchone())
+
+    def fetchmany(self, size):
+        return [self._row_factory(row) for row in self.cursor.fetchmany(size)]
+
+    def fetchall(self):
+        return [self._row_factory(row) for row in self.cursor.fetchall()]
+
+    @property
+    def last_identity_val(self):
+        result = self.execute('SELECT IDENTITY_VAL_LOCAL() AS IDENTITY FROM SYSIBM.SYSDUMMY1')
+        row = result.fetchone()
+        return row[0]
+
+    def quote_value(self, value):
+        if isinstance(value, (datetime.datetime, datetime.date, datetime.time, str)):
+            return f"'{value}'"
+        if isinstance(value, bool):
+            return '1' if value else '0'
+        return str(value)
+
