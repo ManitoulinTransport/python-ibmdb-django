@@ -320,7 +320,15 @@ class DB2CursorWrapper( Database.Cursor ):
                 parameters, operation = self._resolve_parameters_in_expression_func( parameters, operation )
                 if operation.count( "%s" ) > 0:
                     operation = operation.replace("%s", "?")
-                
+
+            # update final sql before execute so we can read locked records from iseries db
+            # sql is original generated from as_sql in SQL compilier
+            # but the generated sql may not be final, looks like it still get processed in several places
+            if operation.startswith('SELECT') and ' WITH NC' not in operation:
+                # only need to update SELECT statement
+                # make sure the sql doesnt include with NC
+                operation = operation + ' WITH NC'
+
             if ( djangoVersion[0:2] <= ( 1, 1 ) ):
                 if ( doReorg == 1 ):
                     super( DB2CursorWrapper, self ).execute( operation, parameters )
