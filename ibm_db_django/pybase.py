@@ -1,7 +1,7 @@
 # +--------------------------------------------------------------------------+
 # |  Licensed Materials - Property of IBM                                    |
 # |                                                                          |
-# | (C) Copyright IBM Corporation 2009-2020.                                      |
+# | (C) Copyright IBM Corporation 2009-2021.                                      |
 # +--------------------------------------------------------------------------+
 # | This module complies with Django 1.0 and is                              |
 # | Licensed under the Apache License, Version 2.0 (the "License");          |
@@ -21,7 +21,6 @@ from _ast import Or
 # Importing IBM_DB wrapper ibm_db_dbi
 try:
     import ibm_db_dbi as Database
-    import ibm_db
 except ImportError as e:
     raise ImportError( "ibm_db module not found. Install ibm_db module from http://code.google.com/p/ibm-db/. Error: %s" % e )
 
@@ -39,11 +38,15 @@ if ( djangoVersion[0:2] >= ( 1, 4) ):
     from django.utils import timezone
     from django.conf import settings
     import warnings
-if ( djangoVersion[0:2] >= ( 1, 5 )):
+if ( djangoVersion[0:2] >= ( 1, 5 )) and ( djangoVersion[0:2] <= ( 2, 2 )):
     from django.utils.encoding import force_bytes, force_text
     from django.utils import six
     import re
- 
+elif ( djangoVersion[0:2] > ( 2, 2 )):
+    from django.utils.encoding import force_bytes, force_text
+    import six
+    import re
+
 _IS_JYTHON = sys.platform.startswith( 'java' )
 if _IS_JYTHON:
     dbms_name = 'dbname'
@@ -64,9 +67,6 @@ if ( djangoVersion[0:2] >= ( 1, 6 )):
 class DatabaseWrapper( object ):
     # Get new database connection for non persistance connection 
     def get_new_connection(self, kwargs):
-        SchemaFlag= False
-        scrollable_cursor = False
-
         kwargsKeys = list(kwargs.keys())
         if ( kwargsKeys.__contains__( 'port' ) and 
             kwargsKeys.__contains__( 'host' ) ):
@@ -110,10 +110,6 @@ class DatabaseWrapper( object ):
         kwargs['conn_options'] = conn_options
         if kwargsKeys.__contains__( 'options' ):
             kwargs.update( kwargs.get( 'options' ) )
-            if (ibm_db.SQL_ATTR_CURSOR_TYPE in kwargs.get('conn_options') and
-                kwargs.get('conn_options')[ibm_db.SQL_ATTR_CURSOR_TYPE] == ibm_db.SQL_CURSOR_KEYSET_DRIVEN):
-                scrollable_cursor = True
-
             del kwargs['options']
         if kwargsKeys.__contains__( 'port' ):
             del kwargs['port']
@@ -128,23 +124,7 @@ class DatabaseWrapper( object ):
         else:
             connection = Database.connect( **kwargs )
         connection.autocommit = connection.set_autocommit
-
-        if SchemaFlag:
-            schema = connection.set_current_schema(currentschema)
-
-        if scrollable_cursor:
-            # The documentation of ibm_db.connect indicates that you could pass
-            # a dictionary of options
-            # https://github.com/ibmdb/python-ibmdb/wiki/APIs#ibm_dbconnect .
-            # However, the dictionary of options gets ignored. Therefore,
-            # the options need to be set AFTER the connection is established.
-            #
-            # You can see the code preceeding setting
-            # AUTOCOMMIT and CURRENTSCHEMA options in much the same way and
-            # probably working around the same bug.
-            connection.set_option(
-                {ibm_db.SQL_ATTR_CURSOR_TYPE: ibm_db.SQL_CURSOR_KEYSET_DRIVEN})
-
+        
         return connection
     
     def is_active( self, connection = None ):
@@ -320,15 +300,10 @@ class DB2CursorWrapper( Database.Cursor ):
                 parameters, operation = self._resolve_parameters_in_expression_func( parameters, operation )
                 if operation.count( "%s" ) > 0:
                     operation = operation.replace("%s", "?")
-
-            # update final sql before execute so we can read locked records from iseries db
-            # sql is original generated from as_sql in SQL compilier
-            # but the generated sql may not be final, looks like it still get processed in several places
-            if operation.startswith('SELECT') and ' WITH NC' not in operation:
-                # only need to update SELECT statement
-                # make sure the sql doesnt include with NC
-                operation = operation + ' WITH NC'
-
+                
+                if operation.count( "%%" ) > 0:
+                    operation = operation.replace("%%", "%")
+            
             if ( djangoVersion[0:2] <= ( 1, 1 ) ):
                 if ( doReorg == 1 ):
                     super( DB2CursorWrapper, self ).execute( operation, parameters )
@@ -394,6 +369,8 @@ class DB2CursorWrapper( Database.Cursor ):
         res = super( DB2CursorWrapper, self ).fetchall()
         if res:
             for sName, tName in res:
+                if tName.count("\"") > 0:
+                    tName = tName.replace('"', '""')
                 reorgSQL = '''CALL SYSPROC.ADMIN_CMD('REORG TABLE "%(sName)s"."%(tName)s"')''' % {'sName': sName, 'tName': tName}
                 reorgSQLs.append(reorgSQL)
             for sql in reorgSQLs:
