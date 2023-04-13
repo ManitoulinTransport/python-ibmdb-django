@@ -69,8 +69,6 @@ class FuncDB2(Func):
         return sql % tuple(params), []
 
 class SQLCompiler( compiler.SQLCompiler ):
-    __rownum = 'Z.__ROWNUM'
-
     def compile(self, node):
         vendor_impl = getattr(node, 'as_' + self.connection.vendor, None)
         if vendor_impl:
@@ -228,103 +226,6 @@ class SQLCompiler( compiler.SQLCompiler ):
             seen.add((without_ordering, params_hash))
             result.append((resolved, (sql, params, is_ref)))
         return result
-
-
-    # To get ride of LIMIT/OFFSET problem in DB2, this method has been implemented.
-    def as_sql( self, with_limits=True, with_col_aliases=False, subquery=False ):
-        self.subquery = subquery
-        self.__do_filter( self.query.where.children )
-
-        if self.query.distinct:
-            if ((list(self.connection.settings_dict.keys())).__contains__('FETCH_DISTINCT_ON_TEXT')) and not self.connection.settings_dict['FETCH_DISTINCT_ON_TEXT']:
-                out_cols = self.get_columns(False)
-                for col in out_cols:
-                    col = col.split(".")[1].replace('"', '').lower()
-                    field = self.query.model._meta.get_field_by_name(col)[0]
-                    fieldType = field.get_internal_type()
-                    if fieldType == 'TextField':
-                        self.query.distinct = False
-                        break
-        if not ( with_limits and ( self.query.high_mark is not None or self.query.low_mark ) ):
-            sql, params = super( SQLCompiler, self ).as_sql( False, with_col_aliases )
-            if sql.find(' WITH RS USE AND KEEP UPDATE LOCKS') != -1:
-                sql = sql.replace(' WITH RS USE AND KEEP UPDATE LOCKS','')
-                sql = sql + (' WITH RS USE AND KEEP UPDATE LOCKS')
-            return sql, params
-        else:
-            sql_ori, params = super( SQLCompiler, self ).as_sql( False, with_col_aliases )
-            if sql_ori.find(' WITH RS USE AND KEEP UPDATE LOCKS') != -1:
-                sql_ori = sql_ori.replace(' WITH RS USE AND KEEP UPDATE LOCKS','')
-                sql_ori = sql_ori + (' WITH RS USE AND KEEP UPDATE LOCKS')
-            if sql_ori.count( "%%s" ) > 0:
-                sql_ori = sql_ori.replace("%%s", "%s")
-            if self.query.low_mark == 0:
-                return sql_ori + " FETCH FIRST %s ROWS ONLY" % ( self.query.high_mark ), params
-            sql_split = sql_ori.split( " FROM " )
-            
-            sql_sec = ""
-            if len( sql_split ) > 2:
-                for i in range( 1, len( sql_split ) ):
-                    sql_sec = " %s FROM %s " % ( sql_sec, sql_split[i] )
-            else:
-                sql_sec = " FROM %s " % ( sql_split[1] )
-            
-            dummyVal = "Z.__db2_"
-            sql_pri = ""
-            
-            sql_sel = "SELECT"
-            if self.query.distinct:
-                sql_sel = "SELECT DISTINCT"
-
-            sql_select_token = sql_split[0].split( "," )
-            i = 0
-            first_field_no = 0
-            while ( i < len( sql_select_token ) ):
-                if sql_select_token[i].count( "TIMESTAMP(DATE(SUBSTR(CHAR(" ) == 1:
-                    sql_sel = "%s \"%s%d\"," % ( sql_sel, dummyVal, i + 1 )
-                    sql_pri = '%s %s,%s,%s,%s AS "%s%d",' % ( 
-                                    sql_pri,
-                                    sql_select_token[i],
-                                    sql_select_token[i + 1],
-                                    sql_select_token[i + 2],
-                                    sql_select_token[i + 3],
-                                    dummyVal, i + 1 )
-                    i = i + 4
-                    continue
-                
-                if sql_select_token[i].count( " AS " ) == 1:
-                    temp_col_alias = sql_select_token[i].split( " AS " )
-                    sql_pri = '%s %s,' % ( sql_pri, sql_select_token[i] )
-                    sql_sel = "%s %s," % ( sql_sel, temp_col_alias[1] )
-                    i = i + 1
-                    continue
-            
-                sql_pri = '%s %s AS "%s%d",' % ( sql_pri, sql_select_token[i], dummyVal, i + 1 )
-                sql_sel = "%s \"%s%d\"," % ( sql_sel, dummyVal, i + 1 )
-                i = i + 1
-                if first_field_no == 0:
-                    first_field_no = i
-
-            sql_pri = sql_pri[:len( sql_pri ) - 1]
-            sql_pri = "%s%s" % ( sql_pri, sql_sec )
-            sql_sel = sql_sel[:len( sql_sel ) - 1]
-            if sql_pri.endswith("DESC ") or sql_pri.endswith("ASC ") or sql_pri.endswith("WITH RS USE AND KEEP UPDATE LOCKS "):
-                sql = '%s, ( ROW_NUMBER() OVER() ) AS "%s" FROM ( %s ) AS M' % ( sql_sel, self.__rownum, sql_pri )
-            else:
-                sql_field = "\"%s%d\"" % (dummyVal, first_field_no)
-                sql = '%s, ( ROW_NUMBER() OVER() ) AS "%s" FROM ( %s ORDER BY %s ASC ) AS M' % ( sql_sel, self.__rownum, sql_pri, sql_field)
-            sql = '%s FROM ( %s ) Z WHERE' % ( sql_sel, sql )
-            
-            if self.query.low_mark != 0:
-                sql = '%s "%s" > %d' % ( sql, self.__rownum, self.query.low_mark )
-                
-            if self.query.low_mark != 0 and self.query.high_mark is not None:
-                sql = '%s AND ' % ( sql )
-
-            if self.query.high_mark is not None:
-                sql = '%s "%s" <= %d' % ( sql, self.__rownum, self.query.high_mark )
-
-        return sql, params
 
     def pre_sql_setup(self):
         """
