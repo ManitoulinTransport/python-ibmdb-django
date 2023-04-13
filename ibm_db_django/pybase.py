@@ -21,6 +21,7 @@ from _ast import Or
 # Importing IBM_DB wrapper ibm_db_dbi
 try:
     import ibm_db_dbi as Database
+    import ibm_db
 except ImportError as e:
     raise ImportError( "ibm_db module not found. Install ibm_db module from http://code.google.com/p/ibm-db/. Error: %s" % e )
 
@@ -67,6 +68,7 @@ if ( djangoVersion[0:2] >= ( 1, 6 )):
 class DatabaseWrapper( object ):
     # Get new database connection for non persistance connection 
     def get_new_connection(self, kwargs):
+        scrollable_cursor = False
         kwargsKeys = list(kwargs.keys())
         if ( kwargsKeys.__contains__( 'port' ) and 
             kwargsKeys.__contains__( 'host' ) ):
@@ -110,6 +112,9 @@ class DatabaseWrapper( object ):
         kwargs['conn_options'] = conn_options
         if kwargsKeys.__contains__( 'options' ):
             kwargs.update( kwargs.get( 'options' ) )
+            if (ibm_db.SQL_ATTR_CURSOR_TYPE in kwargs.get('conn_options') and
+                kwargs.get('conn_options')[ibm_db.SQL_ATTR_CURSOR_TYPE] == ibm_db.SQL_CURSOR_KEYSET_DRIVEN):
+                scrollable_cursor = True
             del kwargs['options']
         if kwargsKeys.__contains__( 'port' ):
             del kwargs['port']
@@ -118,7 +123,20 @@ class DatabaseWrapper( object ):
         if kwargsKeys.__contains__( 'PCONNECT' ):
             pconnect_flag = kwargs['PCONNECT']
             del kwargs['PCONNECT']
-            
+
+        if scrollable_cursor:
+            # The documentation of ibm_db.connect indicates that you could pass
+            # a dictionary of options
+            # https://github.com/ibmdb/python-ibmdb/wiki/APIs#ibm_dbconnect .
+            # However, the dictionary of options gets ignored. Therefore,
+            # the options need to be set AFTER the connection is established.
+            #
+            # You can see the code preceeding setting
+            # AUTOCOMMIT and CURRENTSCHEMA options in much the same way and
+            # probably working around the same bug.
+            connection.set_option(
+                {ibm_db.SQL_ATTR_CURSOR_TYPE: ibm_db.SQL_CURSOR_KEYSET_DRIVEN})
+
         if pconnect_flag:
             connection = Database.pconnect( **kwargs )
         else:
