@@ -260,8 +260,17 @@ class DatabaseOperations ( BaseDatabaseOperations ):
     def date_trunc_sql( self, lookup_type, field_name, tzname=None ):
         #As DB2 LUW doesn't support timezone, we comment below line for now. 
         #field_name = self._convert_field_to_tz(field_name, tzname)
-        return "DATE_TRUNC('%s', %s)" % (lookup_type, field_name)
-    
+        # return "DATE_TRUNC('%s', %s)" % (lookup_type, field_name)
+        # revert to previous version since as400 doesnt support date_trunc function
+        sql = "TIMESTAMP(DATE(SUBSTR(CHAR(%s), 1, %d) || '%s'), TIME('00:00:00'))"
+        if lookup_type.upper() == 'DAY':
+            sql = sql % ( field_name, 10, '' )
+        elif lookup_type.upper() == 'MONTH':
+            sql = sql % ( field_name, 7, '-01' )
+        elif lookup_type.upper() == 'YEAR':
+            sql = sql % ( field_name, 4, '-01-01' )
+        return sql
+
     # Truncating the time zone-aware timestamps value on the basic of lookup type
     def datetime_trunc_sql( self, lookup_type, field_name, tzname ):
         if settings.USE_TZ: #Timezone not supported in DB2 LUW
