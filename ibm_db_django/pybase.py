@@ -124,6 +124,12 @@ class DatabaseWrapper( object ):
             pconnect_flag = kwargs['PCONNECT']
             del kwargs['PCONNECT']
 
+        if pconnect_flag:
+            connection = Database.pconnect( **kwargs )
+        else:
+            connection = Database.connect( **kwargs )
+        connection.autocommit = connection.set_autocommit
+
         if scrollable_cursor:
             # The documentation of ibm_db.connect indicates that you could pass
             # a dictionary of options
@@ -137,12 +143,6 @@ class DatabaseWrapper( object ):
             connection.set_option(
                 {ibm_db.SQL_ATTR_CURSOR_TYPE: ibm_db.SQL_CURSOR_KEYSET_DRIVEN})
 
-        if pconnect_flag:
-            connection = Database.pconnect( **kwargs )
-        else:
-            connection = Database.connect( **kwargs )
-        connection.autocommit = connection.set_autocommit
-        
         return connection
     
     def is_active( self, connection = None ):
