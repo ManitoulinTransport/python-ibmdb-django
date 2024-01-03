@@ -29,18 +29,27 @@ if sys.version_info >= (3, ):
 from django import VERSION as djangoVersion
 
 import datetime
+import math
 from django.db.models.sql.query import get_order_dir
 from django.db.models.sql.constants import ORDER_DIR
 from django.db.models.expressions import OrderBy, RawSQL, Ref, Value, F, Func
 from django.utils.hashable import make_hashable
 from django.db.utils import DatabaseError
-from django.db.models.functions import Cast, Random
+from django.db.models.functions import Cast, Random, Pi
+from django import VERSION as djangoVersion
+
 FORCE = object()
 
+class PiDB2(Pi):
+    def as_sql(self, compiler, connection, **extra_context):
+        return super().as_sql(
+            compiler, connection, template=str(math.pi), **extra_context
+        )
+
 class FuncDB2(Func):
-    def __init__(self, *expressions, output_field=None, **extra):        
-        super().__init__(output_field=output_field)        
-    
+    def __init__(self, *expressions, output_field=None, **extra):
+        super().__init__(output_field=output_field)
+
     def as_sql(self, compiler, connection, function=None, template=None, arg_joiner=None, **extra_context):
         connection.ops.check_expression_support(self)
         sql_parts = []
@@ -73,12 +82,17 @@ class SQLCompiler( compiler.SQLCompiler ):
         vendor_impl = getattr(node, 'as_' + self.connection.vendor, None)
         if vendor_impl:
             sql, params = vendor_impl(self, self.connection)
-        else:             
+        else:
             if isinstance(node, JSONObject):
                 funcDb2 = FuncDB2()
                 funcDb2.function = node.function
-                funcDb2.source_expressions = node.source_expressions 
-                sql, params = funcDb2.as_sql(self, self.connection )            
+                funcDb2.source_expressions = node.source_expressions
+                sql, params = funcDb2.as_sql(self, self.connection )
+            elif isinstance(node, Pi):
+                piDb2 = PiDB2()
+                piDb2.function = node.function
+                piDb2.source_expressions = node.source_expressions
+                sql, params = piDb2.as_sql(self, self.connection )
             else:
                 sql, params = node.as_sql(self, self.connection)
         return sql, params
@@ -227,13 +241,23 @@ class SQLCompiler( compiler.SQLCompiler ):
             result.append((resolved, (sql, params, is_ref)))
         return result
 
-    def pre_sql_setup(self):
+    def pre_sql_setup(self, with_col_aliases=False):
         """
         Do any necessary class setup immediately prior to producing SQL. This
         is for things that can't necessarily be done in __init__ because we
         might not have all the pieces in place at that time.
         """
-        extra_select, order_by, group_by = super().pre_sql_setup()
+
+        # In Django 4.2, pre_sql_setup() sprouted an optional
+        # parameter, which should probably be passed along to its
+        # super class. Check the Django version here to maintain
+        # backwards compatibility with older Django versions
+        #
+        # See: https://github.com/django/django/commit/8c3046daade8d9b019928f96e53629b03060fe73
+        if djangoVersion[0:2] >= (4, 2):
+            extra_select, order_by, group_by = super().pre_sql_setup(with_col_aliases=with_col_aliases)
+        else:
+            extra_select, order_by, group_by = super().pre_sql_setup()
 
         if group_by:
             group_by_list = []
@@ -303,13 +327,13 @@ class SQLCompiler( compiler.SQLCompiler ):
                 params = []
             ret.append((col, (sql, params), alias))
         return ret
-    
+
     def __map23(self, value, field):
         if sys.version_info >= (3, ):
             return zip_longest(value, field)
         else:
             return map(None, value, field)
-        
+
     #This function  convert 0/1 to boolean type for BooleanField/NullBooleanField
     def resolve_columns( self, row, fields = () ):
         values = []
@@ -319,7 +343,7 @@ class SQLCompiler( compiler.SQLCompiler ):
                 value = bool( value )
             values.append( value )
         return row[:index_extra_select] + tuple( values )
-    
+
     # For case insensitive search, converting parameter value to upper case.
     # The right hand side will get converted to upper case in the SQL itself.
     def __do_filter( self, children ):

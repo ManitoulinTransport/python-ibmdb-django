@@ -40,11 +40,9 @@ if ( djangoVersion[0:2] >= ( 1, 4) ):
     from django.conf import settings
     import warnings
 if ( djangoVersion[0:2] >= ( 1, 5 )) and ( djangoVersion[0:2] <= ( 2, 2 )):
-    from django.utils.encoding import force_bytes, force_text
     from django.utils import six
     import re
 elif ( djangoVersion[0:2] > ( 2, 2 )):
-    from django.utils.encoding import force_bytes, force_text
     import six
     import re
 
@@ -225,15 +223,14 @@ class DB2CursorWrapper( Database.Cursor ):
 
         return tuple( new_parameters ), operation
 
-    def _resolve_parameters_in_aggregator_func(self, parameters, operation):
+    def _resolve_parameters_in_aggregator_func(self, parameters, operation, aggr_list, pattern):
         op_temp = ""
         op_temp_wParam = ""
         p_start = 0
-        aggr_list = ['COUNT','AVG','MIN','MAX','SUM']
         res = any(ele in operation for ele in aggr_list)
 
         if res:
-            for m in regex.finditer(r'(SUM|AVG|COUNT|MIN|MAX)\ *\(', operation):
+            for m in regex.finditer(pattern, operation):
                 end = m.end()
                 p_start = len(op_temp)
                 prev_str = operation[p_start:end-1]
@@ -269,8 +266,8 @@ class DB2CursorWrapper( Database.Cursor ):
         op_temp_wParam = ""
         p_start = 0
 
-        if re.search(r'%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
-            for m in re.finditer(r'%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
+        if re.search(r'%s\ *\-|\-\ *%s|%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
+            for m in re.finditer(r'%s\ *\-|\-\ *%s|%s\ *\+|\+\ *%s|\ *THEN\ *%s|\ *\(?%s\)?\ *AS\ *|\ *ELSE\ *%s', operation):
                 p_start = m.start()
                 op_temp_wParam = op_temp_wParam + operation[prev_end:p_start]
                 parm_count = op_temp_wParam.count('%s')
@@ -313,7 +310,8 @@ class DB2CursorWrapper( Database.Cursor ):
                 parameters = ()
 
             if operation.count( "%s" ) > 0 and parameters:
-                parameters, operation = self._resolve_parameters_in_aggregator_func(parameters, operation)
+                parameters, operation = self._resolve_parameters_in_aggregator_func(parameters, operation, ['COUNT','AVG','MIN','MAX','SUM'], r'(SUM|AVG|COUNT|MIN|MAX)\ *\(')
+                parameters, operation = self._resolve_parameters_in_aggregator_func(parameters, operation, ['COALESCE'], r'(COALESCE)\ *\(')
                 parameters, operation = self._format_parameters( parameters, operation )
                 parameters, operation = self._resolve_parameters_in_expression_func( parameters, operation )
                 if operation.count( "%s" ) > 0:
