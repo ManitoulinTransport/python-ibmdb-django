@@ -321,12 +321,13 @@ class DB2CursorWrapper( Database.Cursor ):
                 if operation.count( "%s" ) > 0:
                     operation = operation.replace("%s", "?")
 
+            # Ensure SELECT statements have WITH NC to read locked records.
             # update final sql before execute so we can read locked records from iseries db
             # sql is original generated from as_sql in SQL compilier
             # but the generated sql may not be final, looks like it still get processed in several places
-            if operation.startswith('SELECT') and ' WITH NC' not in operation:
-                # only need to update SELECT statement
-                # make sure the sql doesnt include with NC
+            is_select_statement = operation.startswith('SELECT') or operation.startswith('WITH')
+            # `WITH` at start also indicates it's a SELECT statement, since the WITH is the start of a CTE (Common Table Expressions), and CTEs can only be used in SELECT statements
+            if is_select_statement and ' WITH NC' not in operation:
                 operation = operation + ' WITH NC'
 
             if ( djangoVersion[0:2] <= ( 1, 1 ) ):
