@@ -321,7 +321,9 @@ class DB2CursorWrapper( Database.Cursor ):
                 if operation.count( "%s" ) > 0:
                     operation = operation.replace("%s", "?")
 
-            # Ensure SELECT statements have WITH NC to read locked records.
+            # Ensure SELECT statements have WITH NC and USE CURRENTLY COMMITTED to read locked records.
+            # - https://www.ibm.com/docs/en/i/7.4?topic=statement-isolation-clause
+            # - https://www.ibm.com/docs/en/i/7.4?topic=statement-concurrent-access-resolution-clause
             # update final sql before execute so we can read locked records from iseries db
             # sql is original generated from as_sql in SQL compilier
             # but the generated sql may not be final, looks like it still get processed in several places
@@ -329,6 +331,8 @@ class DB2CursorWrapper( Database.Cursor ):
             # `WITH` at start also indicates it's a SELECT statement, since the WITH is the start of a CTE (Common Table Expressions), and CTEs can only be used in SELECT statements
             if is_select_statement and ' WITH NC' not in operation:
                 operation = operation + ' WITH NC'
+            if is_select_statement and ' WITH NC' not in operation:
+                operation = operation + ' USE CURRENTLY COMMITTED'
 
             if ( djangoVersion[0:2] <= ( 1, 1 ) ):
                 if ( doReorg == 1 ):
