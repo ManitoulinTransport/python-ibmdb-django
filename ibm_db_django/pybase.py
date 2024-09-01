@@ -331,7 +331,7 @@ class DB2CursorWrapper( Database.Cursor ):
             # `WITH` at start also indicates it's a SELECT statement, since the WITH is the start of a CTE (Common Table Expressions), and CTEs can only be used in SELECT statements
             if is_select_statement and ' WITH NC' not in operation:
                 operation = operation + ' WITH NC'
-            if is_select_statement and ' WITH NC' not in operation:
+            if is_select_statement and ' USE CURRENTLY COMMITTED' not in operation:
                 operation = operation + ' USE CURRENTLY COMMITTED'
 
             if ( djangoVersion[0:2] <= ( 1, 1 ) ):
